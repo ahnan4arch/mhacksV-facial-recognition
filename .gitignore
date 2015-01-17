@@ -1,2 +1,5 @@
 camera
 *.o
+
+#pictures we take
+cudaPic*.jpg
