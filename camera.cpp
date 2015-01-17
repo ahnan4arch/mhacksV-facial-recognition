@@ -93,13 +93,32 @@ int main() {
 	printf("Camera init\n");
 	GP_SAFE( gp_camera_init(camera, cam_context) );
 
-	// get preview image
-	GP_SAFE( gp_file_new(&previewFile) );
+	// before loop prep
+	// Do not do auto_focus in the while loop b/c
+	// the camera will "freeze"
 	camera_auto_focus(camera, cam_context);
-	GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
-	GP_SAFE( gp_file_get_data_and_size(previewFile, &data, &size) );
 
-	// get a filename
+	namedWindow("image", WINDOW_AUTOSIZE);
+
+	while (true) {
+		GP_SAFE( gp_file_new(&previewFile) );
+		GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
+		GP_SAFE( gp_file_get_data_and_size(previewFile, &data, &size) );
+
+		// view in opencv
+		// 640x424 is the size of the image from preview
+		Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
+		Mat img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
+		imshow("image", img);
+
+		if (waitKey(20) == 27) {
+			gp_file_unref(previewFile);
+			break;
+		}
+		gp_file_unref(previewFile);
+	}
+
+	/* get a filename
 	{
 		int i;
 		i = 0;
@@ -130,19 +149,8 @@ int main() {
 				return -1;
 			}
 		} while (true);
-	}
+	}*/
 
-	// view in opencv
-	// 640x424 is the size of the image from preview
-	Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
-	Mat img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
-	namedWindow("image", WINDOW_AUTOSIZE);
-	imshow("image", img);
-
-	waitKey(0);
-
-	// clean up
-	gp_file_unref(previewFile);
 	gp_camera_exit(camera, cam_context);
 
 	return 0;
