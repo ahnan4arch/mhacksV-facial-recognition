@@ -2,14 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <iostream>
 
 #include <gphoto2/gphoto2.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/core/core.hpp>
+#include <opencv2/gpu/gpu.hpp>
 
 #define GP_SAFE( retval ) ( gp_safe( (retval) ) )
 
 using namespace cv;
+using namespace cv::gpu;
 using namespace std;
 
 inline void gp_safe(int gp_code) {
@@ -76,11 +79,10 @@ int main() {
 	Camera *camera;
 	CameraFile *previewFile;
 	GPContext *cam_context;
-	int retval;
 	const char *data;
 	long unsigned int size;
-	const size_t file_name_len = 256;
-  const char fname[file_name_len] = "cudaPic";
+	//const size_t file_name_len = 256;
+    //const char fname[file_name_len] = "cudaPic";
 
 	gp_camera_new(&camera);
 
@@ -99,7 +101,31 @@ int main() {
 	camera_auto_focus(camera, cam_context);
 
 	namedWindow("image", WINDOW_AUTOSIZE);
+	namedWindow("foreground mask", WINDOW_AUTOSIZE);
+	namedWindow("foreground image", WINDOW_AUTOSIZE);
+	namedWindow("mean background image", WINDOW_AUTOSIZE);
 
+	MOG2_GPU bg_model;
+
+	Mat img;
+	Mat fgmask;
+	Mat fgimg;
+	Mat bgimg;
+
+	// get first frame
+	GP_SAFE( gp_file_new(&previewFile) );
+	GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
+	GP_SAFE( gp_file_get_data_and_size(previewFile, &data, &size) );
+	Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
+	img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
+
+	GpuMat d_img(img);
+	GpuMat d_fgmask;
+	GpuMat d_fgimg;
+
+	bg_model(d_img, d_fgmask);
+
+	printf("Starting loop\n");
 	while (true) {
 		GP_SAFE( gp_file_new(&previewFile) );
 		GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
@@ -108,8 +134,24 @@ int main() {
 		// view in opencv
 		// 640x424 is the size of the image from preview
 		Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
-		Mat img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
+		img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
+		d_img.upload(img);
+
+		// update the model
+		bg_model(d_img, d_fgmask);
+		//bg_model.getBackgroundImage(d_bgimg);
+
+		d_fgimg.create(img.size(), img.type());
+		d_fgimg.setTo(Scalar::all(0));
+		d_img.copyTo(d_fgimg, d_fgmask);
+
+		// download
+		d_fgmask.download(fgmask);
+		d_fgimg.download(fgimg);
+
 		imshow("image", img);
+		imshow("foreground mask", fgmask);
+		imshow("foreground image", fgimg);
 
 		if (waitKey(20) == 27) {
 			gp_file_unref(previewFile);
