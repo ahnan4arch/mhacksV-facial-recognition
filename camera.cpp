@@ -1,8 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <gphoto2/gphoto2.h>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/core/core.hpp>
 
 #define GP_SAFE( retval ) ( gp_safe( (retval) ) )
+
+using namespace cv;
+using namespace std;
 
 inline void gp_safe(int gp_code) {
 	if (gp_code != GP_OK) {
@@ -64,6 +69,8 @@ int main() {
 	CameraFile *previewFile;
 	GPContext *cam_context;
 	int retval;
+	const char *data;
+	long unsigned int size;
 
 	gp_camera_new(&camera);
 
@@ -80,7 +87,16 @@ int main() {
 	GP_SAFE( gp_file_new(&previewFile) );
 	camera_auto_focus(camera, cam_context);
 	GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
-	GP_SAFE( gp_file_save(previewFile, "a.jpg") );
+	GP_SAFE( gp_file_get_data_and_size(previewFile, &data, &size) );
+
+	// view in opencv
+	// 640x424 is the size of the image from preview
+	Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
+	Mat img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
+	namedWindow("image", WINDOW_AUTOSIZE);
+	imshow("image", img);
+
+	waitKey(0);
 
 	// clean up
 	gp_file_unref(previewFile);
