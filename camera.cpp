@@ -101,29 +101,13 @@ int main() {
 	camera_auto_focus(camera, cam_context);
 
 	namedWindow("image", WINDOW_AUTOSIZE);
-	namedWindow("foreground mask", WINDOW_AUTOSIZE);
-	namedWindow("foreground image", WINDOW_AUTOSIZE);
-	namedWindow("mean background image", WINDOW_AUTOSIZE);
-
-	MOG2_GPU bg_model;
 
 	Mat img;
-	Mat fgmask;
-	Mat fgimg;
-	Mat bgimg;
 
-	// get first frame
-	GP_SAFE( gp_file_new(&previewFile) );
-	GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
-	GP_SAFE( gp_file_get_data_and_size(previewFile, &data, &size) );
-	Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
-	img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
-
-	GpuMat d_img(img);
-	GpuMat d_fgmask;
-	GpuMat d_fgimg;
-
-	bg_model(d_img, d_fgmask);
+	GpuMat d_img;
+	GpuMat d_img_grey;
+	GpuMat d_edges;
+	GpuMat d_dst;
 
 	printf("Starting loop\n");
 	while (true) {
@@ -137,21 +121,26 @@ int main() {
 		img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
 		d_img.upload(img);
 
-		// update the model
-		bg_model(d_img, d_fgmask);
-		//bg_model.getBackgroundImage(d_bgimg);
+		// to grayscale
+		cv::gpu::cvtColor(d_img, d_img_grey, CV_BGR2GRAY);
 
-		d_fgimg.create(img.size(), img.type());
-		d_fgimg.setTo(Scalar::all(0));
-		d_img.copyTo(d_fgimg, d_fgmask);
+		d_edges.create(img.size(), d_img_grey.type());
+		d_dst.create(d_img_grey.size(), d_img_grey.type());
+		d_img_grey.create(d_img_grey.size(), d_img_grey.type());
+
+		// blur
+		cv::gpu::GaussianBlur(d_img_grey, d_edges, Size(3,3), 2);
+
+		// canny
+		cv::gpu::Canny(d_edges, d_edges, 20, 60);
+
+		d_dst.setTo(Scalar::all(0));
+		d_img.copyTo(d_dst, d_edges);
 
 		// download
-		d_fgmask.download(fgmask);
-		d_fgimg.download(fgimg);
+		d_edges.download(img);
 
 		imshow("image", img);
-		imshow("foreground mask", fgmask);
-		imshow("foreground image", fgimg);
 
 		if (waitKey(20) == 27) {
 			gp_file_unref(previewFile);
