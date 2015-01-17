@@ -6,6 +6,7 @@
 
 #include <gphoto2/gphoto2.h>
 #include <opencv2/highgui/highgui.hpp>
+#include "opencv2/objdetect/objdetect.hpp"
 #include <opencv2/core/core.hpp>
 #include <opencv2/gpu/gpu.hpp>
 
@@ -100,30 +101,29 @@ int main() {
 	// the camera will "freeze"
 	camera_auto_focus(camera, cam_context);
 
-	namedWindow("image", WINDOW_AUTOSIZE);
-	namedWindow("foreground mask", WINDOW_AUTOSIZE);
-	namedWindow("foreground image", WINDOW_AUTOSIZE);
-	namedWindow("mean background image", WINDOW_AUTOSIZE);
+	namedWindow("facedetect", WINDOW_AUTOSIZE);
+	namedWindow("fgimg", WINDOW_AUTOSIZE);
 
-	MOG2_GPU bg_model;
+	// load cascade classifier
+	cv::gpu::CascadeClassifier_GPU d_face_cc;
+	//String frontalface = "haarcascade_frontalface_alt.xml";
+	//String frontalface = "haarcascade_frontalcatface.xml";
+	String frontalface = "lbpcascade_frontalface.xml";
+	d_face_cc.load(frontalface);
 
+	Mat objbuf;
 	Mat img;
-	Mat fgmask;
 	Mat fgimg;
-	Mat bgimg;
 
-	// get first frame
-	GP_SAFE( gp_file_new(&previewFile) );
-	GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
-	GP_SAFE( gp_file_get_data_and_size(previewFile, &data, &size) );
-	Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
-	img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
-
-	GpuMat d_img(img);
+	GpuMat d_img;
+	GpuMat d_img_gray;
+	GpuMat d_objbuf;
+	GpuMat d_blurred;
 	GpuMat d_fgmask;
 	GpuMat d_fgimg;
+	GpuMat d_fgmask_opened;
 
-	bg_model(d_img, d_fgmask);
+	MOG2_GPU mog2;
 
 	printf("Starting loop\n");
 	while (true) {
@@ -135,23 +135,34 @@ int main() {
 		// 640x424 is the size of the image from preview
 		Mat imgbuf(Size(640,424), CV_8UC3, (void*)data);
 		img = imdecode(imgbuf, CV_LOAD_IMAGE_COLOR);
+		if (img.empty()) continue;
 		d_img.upload(img);
 
-		// update the model
-		bg_model(d_img, d_fgmask);
-		//bg_model.getBackgroundImage(d_bgimg);
+		cv::gpu::cvtColor(d_img, d_img_gray, CV_BGR2GRAY);
+		cv::gpu::equalizeHist(d_img_gray, d_img_gray);
 
-		d_fgimg.create(img.size(), img.type());
+		cv::gpu::GaussianBlur(d_img_gray, d_blurred, Size(31,31), 2);
+
+		mog2(d_blurred, d_fgmask);
+
+		Mat rect_morph = getStructuringElement(MORPH_RECT, Size(7, 7), Point(3, 3));
+		cv::gpu::morphologyEx(d_fgmask, d_fgmask_opened, CV_MOP_CLOSE, rect_morph);
+
+		d_fgimg.create(img.size(), CV_BGR2GRAY);
 		d_fgimg.setTo(Scalar::all(0));
-		d_img.copyTo(d_fgimg, d_fgmask);
+		d_img_gray.copyTo(d_fgimg, d_fgmask_opened);
 
-		// download
-		d_fgmask.download(fgmask);
+		d_face_cc.detectMultiScale(d_fgimg, d_objbuf, 1.1, 4);
+		d_objbuf.colRange(0, 4).download(objbuf);
+
+		Rect* faces = objbuf.ptr<Rect>();
+		for (int i = 0; i < 4; i++) {
+			cv::rectangle(img, faces[i], Scalar(255));
+		}
+
 		d_fgimg.download(fgimg);
-
-		imshow("image", img);
-		imshow("foreground mask", fgmask);
-		imshow("foreground image", fgimg);
+		imshow("facedetect", img);
+		imshow("fgimg", fgimg);
 
 		if (waitKey(20) == 27) {
 			gp_file_unref(previewFile);
