@@ -73,7 +73,7 @@ int main() {
 	gp_context_set_status_func(cam_context, ctx_status_func, NULL);
 
 	// init camera
-	printf("Camera init");
+	printf("Camera init\n");
 	GP_SAFE( gp_camera_init(camera, cam_context) );
 
 	// get preview image
