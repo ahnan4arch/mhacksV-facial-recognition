@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
 #include <gphoto2/gphoto2.h>
 
 #define GP_SAFE( retval ) ( gp_safe( (retval) ) )
@@ -64,6 +67,8 @@ int main() {
 	CameraFile *previewFile;
 	GPContext *cam_context;
 	int retval;
+	const size_t file_name_len = 256;
+  const char fname[file_name_len] = "cudaPic";
 
 	gp_camera_new(&camera);
 
@@ -80,7 +85,38 @@ int main() {
 	GP_SAFE( gp_file_new(&previewFile) );
 	camera_auto_focus(camera, cam_context);
 	GP_SAFE( gp_camera_capture_preview(camera, previewFile, cam_context) );
-	GP_SAFE( gp_file_save(previewFile, "a.jpg") );
+	// get a filename
+	{
+		int i;
+		i = 0;
+		char file_name[file_name_len];
+		FILE *fd = NULL;
+		do {
+			file_name[0] = '\0';
+			strncpy(file_name, fname, file_name_len);
+			snprintf(file_name, file_name_len, "%s_%08d", fname, i);
+			strncat (file_name, ".jpg", file_name_len);
+			fd = fopen(file_name, "r");
+			if (fd) {
+				// file exists, continue the loop
+				if (fclose(fd) != 0) {
+					// error
+				}
+				fd = NULL;
+				i++;
+				continue;
+			} else if (errno == ENOENT) {
+				// the file does not exist
+				// TODO this is not atomic
+				GP_SAFE( gp_file_save(previewFile, file_name) );
+				break;
+				// TODO check return codes
+			} else {
+				// other error
+				return -1;
+			}
+		} while (true);
+	}
 
 	// clean up
 	gp_file_unref(previewFile);
