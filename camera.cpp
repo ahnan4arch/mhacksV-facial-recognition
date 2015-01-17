@@ -22,13 +22,16 @@ int camera_auto_focus(Camera *camera, GPContext *context) {
 	int ret, val;
 
 	ret = gp_camera_get_config(camera, &widget, context);
-	if (ret < GP_OK) return ret;
+	if (ret < GP_OK)
+		return ret;
 
 	ret = gp_widget_get_child_by_name(widget, "autofocusdrive", &child);
-	if (ret < GP_OK) goto caf_out;
+	if (ret < GP_OK)
+		goto caf_out;
 
 	ret = gp_widget_get_type(child, &type);
-	if (ret < GP_OK) goto caf_out;
+	if (ret < GP_OK)
+		goto caf_out;
 
 	if (type != GP_WIDGET_TOGGLE) {
 		ret = GP_ERROR_BAD_PARAMETERS;
@@ -36,11 +39,13 @@ int camera_auto_focus(Camera *camera, GPContext *context) {
 	}
 
 	ret = gp_widget_get_value(child, &val);
-	if (ret < GP_OK) goto caf_out;
+	if (ret < GP_OK)
+		goto caf_out;
 
 	val++;
 	ret = gp_widget_set_value(child, &val);
-	if (ret < GP_OK) goto caf_out;
+	if (ret < GP_OK)
+		goto caf_out;
 
 	ret = gp_camera_set_config(camera, widget, context);
 
